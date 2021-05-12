@@ -128,8 +128,8 @@ class Project03DatasetMFCC(Dataset):
             for j in range(len(paths)):
                 path = wav_dir + '/' + paths[j].strip('\n')
                 audio, sr = librosa.load(path, sr=None)
-                # NOTE hyperparameters: 40 dim vectors, 25 ms window length, 10 ms stride
-                mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40, n_fft=int(0.025*sr), hop_length=int(0.010*sr))
+                # default hyperparameters: 40 dim vectors, 25 ms window length, 10 ms stride, here using non-default
+                mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=100, n_fft=int(0.050*sr), hop_length=int(0.020*sr))
                 mfccs.append(torch.swapdims(torch.tensor(mfcc), 0, 1))
 
         # Read in the words

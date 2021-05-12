@@ -8,44 +8,39 @@ from collections import OrderedDict
 class ASRModelDiscrete(torch.nn.Module):
     """
     Creates a torch LSTM for training a speech recognizer using discrete inputs.
-
-    vocab_size: Number of distinct input quantized labels, plus padding.
-    alphabet_size: Number of distinct output labels in label sequence, plus blank.
-    embedding_dim: Dimensions to set embeddings to.
-    hidden_dim: dimensions to set LSTM output to.
     """
-    def __init__(self, embedding_dim, hidden_dim, n_layers, vocab_size=257, alphabet_size=28):
+    def __init__(self, embedding_dim, hidden_dim, vocab_size=257, alphabet_size=28):
+        """
+        embedding_dim: Dimensions to set embeddings to.
+        hidden_dim: Dimensions to set LSTM output to.
+        vocab_size: Number of distinct input quantized labels, plus padding.
+        alphabet_size: Number of distinct output labels in label sequence, plus blank.
+        """
         super(ASRModelDiscrete, self).__init__()
-        self.hidden_dim = hidden_dim
-        # NOTE: vocab size is 256, but one extra for padding_idx
+        self.embedding_dim = embedding_dim
+
         self.word_embeddings = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
 
-        # TODO: try dropout, batch norm
-
-        #self.conv1 = nn.Conv1d(1,1,3, padding=1)
-
-        # The LSTM takes word embeddings as inputs, and outputs hidden states
-        # with dimensionality hidden_dim.
-        self.bilstm1 = nn.LSTM(embedding_dim, int(hidden_dim/2), batch_first=True, bidirectional=True)
-        self.bilstm2 = nn.LSTM(hidden_dim, int(hidden_dim/2), batch_first=True, bidirectional=True)
+        self.lin1 = nn.Linear(embedding_dim, embedding_dim)
         self.relu = nn.ReLU()
 
-        # The linear layer that maps from hidden state space to tag space
+        self.lstm = nn.LSTM(embedding_dim, int(hidden_dim/2), batch_first=True, bidirectional=True)#, num_layers=2, dropout=0.4)
+
         self.decoder = nn.Linear(hidden_dim, alphabet_size)
 
     def forward(self, x, x_lens):
+        """
+        This architecture consists of two MLP layers before and after a biLSTM. It is simple and has sufficient
+        computational power to model the task well.
+
+        x_lens: Tuple with length of each sequence in batch, unpadded. Allows pack_padded_sequence on LSTM inputs.
+        """
         embeds = self.word_embeddings(x)
 
-        #embeds = self.conv1(embeds)
+        out = self.relu(self.lin1(embeds))
 
-        embeds = torch.nn.utils.rnn.pack_padded_sequence(embeds, x_lens, batch_first=True, enforce_sorted=False)
-        lstm_out, _ = self.bilstm1(embeds)
-        lstm_out, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True)
-
-        lstm_out = self.relu(lstm_out)
-        
-        lstm_out = torch.nn.utils.rnn.pack_padded_sequence(lstm_out, x_lens, batch_first=True, enforce_sorted=False)
-        lstm_out, _ = self.bilstm2(lstm_out)
+        out = torch.nn.utils.rnn.pack_padded_sequence(out, x_lens, batch_first=True, enforce_sorted=False)
+        lstm_out, _ = self.lstm(out)
         lstm_out, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True)
 
         letter_probs = self.decoder(lstm_out)
@@ -54,24 +49,48 @@ class ASRModelDiscrete(torch.nn.Module):
         return log_probs
 
 class ASRModelMFCC(torch.nn.Module):
-    def __init__(self, mfcc_dim=40, hidden_dim=100, alphabet_size=28):
+    """
+    Creates a torch LSTM for training a speech recognizer using MFCC continuous vector inputs.
+    """
+    def __init__(self, mfcc_dim, hidden_dim, alphabet_size=28):
+        """
+        mfcc_dim: Dimensions of input audio's MFCC frame vector sequence.
+        hidden_dim: Dimensions to set combined biLSTM output to.
+        alphabet_size: Number of distinct output labels in label sequence, plus blank.
+        """
         super(ASRModelMFCC, self).__init__()
-        self.hidden_dim = hidden_dim
+        self.mfcc_dim = mfcc_dim
 
-        # The LSTM takes word embeddings as inputs, and outputs hidden states
-        # with dimensionality hidden_dim.
-        self.lstm = nn.LSTM(mfcc_dim, hidden_dim, batch_first=True)
-
-        # The linear layer that maps from hidden state space to tag space
+        self.conv1 = nn.Conv1d(1, 10, 3, padding=1)
+        self.conv2 = nn.Conv1d(10, 1, 3, padding=1)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout()
+        self.lstm = nn.LSTM(mfcc_dim, int(hidden_dim/2), batch_first=True, bidirectional=True)#, num_layers=2, dropout=0.4)
         self.decoder = nn.Linear(hidden_dim, alphabet_size)
 
     def forward(self, x, x_lens):
-        # TODO: Write Forward Pass
-        #print(embeds.view(len(x), 1, -1).size())
+        """
+        This architecture consists largely of two convolutional layers on each MFCC vector combined with a
+        biLSTM on top, with a final MLP classification layer on top. Regularization schemes include
+        droput between the convolutional layers.
+
+        x_lens: Tuple with length of each sequence in batch, unpadded. Allows pack_padded_sequence on LSTM inputs.
+        """
+
+        batch_size = x.size()[0]
+        seq_length = x.size()[1]
+        
+        x = x.view(batch_size*seq_length, 1, self.mfcc_dim)
+        x = self.relu(self.conv1(x))
+        x = self.dropout(x)
+        x = self.relu(self.conv2(x))
+        x = x.view(batch_size, seq_length, self.mfcc_dim)
+
         x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lens, batch_first=True, enforce_sorted=False)
         lstm_out, _ = self.lstm(x)
         lstm_out, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True)
+
         letter_probs = self.decoder(lstm_out)
         log_probs = F.log_softmax(letter_probs, dim=2)
-        # Output should be Batch × InputLength × NumLetters
+
         return log_probs
