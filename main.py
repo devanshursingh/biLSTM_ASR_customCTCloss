@@ -182,7 +182,7 @@ if __name__ == "__main__":
             val_dataset.append(train_dataset[vid])
         train_dataloader = DataLoader(train_dataset, batch_size=128, collate_fn=collate_fn, sampler=train_sampler)
         val_dataloader = DataLoader(train_dataset, batch_size=128, collate_fn=collate_fn, sampler=val_sampler)
-        test_dataset = Project03DatasetMFCC('data/clsp.trnwav', 'data/waveforms')
+        test_dataset = Project03DatasetMFCC('data/clsp.devwav', 'data/waveforms')
         model = ASRModelMFCC(mfcc_dim=100, hidden_dim=200)
 
     if args.stage <= 1:
@@ -209,7 +209,7 @@ if __name__ == "__main__":
 
     if args.stage <= 2:
         print('Stage 3: Test ' + args.features + ' Model')
-        model.load_state_dict(torch.load('checkpoint/model_last.pt'))
+        model.load_state_dict(torch.load('checkpoint/model_best_secondary.pt'))
         predictions, accuracy = test(train_dataset, train_dataset.phones, train_dataset.phones_rev, vocab, model, criterion)
         print('Final Train Accuracy: ' + str(accuracy))
         predictions, accuracy = test(val_dataset, train_dataset.phones, train_dataset.phones_rev, vocab, model, criterion)
