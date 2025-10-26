@@ -1,4 +1,4 @@
-# infoextractproj2
+# 2 biLSTM ASR models trained with custom CTC loss function on both quantized inputs and MFCCs for .wav files
 
 This is the directory for Information Extraction Project 3.
 There are two folders: data, and checkpoints.
